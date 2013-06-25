@@ -20,11 +20,12 @@
 ##
 #########################################################################
 
-import argparse
+import atexit
 import ConfigParser
 import gzip
 import os
 import shutil
+import signal
 import sys
 import logging
 from tempfile import mkdtemp
@@ -32,24 +33,18 @@ from fs.memoryfs import MemoryFS
 from fs.expose import fuse
 
 class LogRunner:
-	def __init__(self, path, gzpath, size):
+	def __init__(self, config_file):
 		# Create the ramdisk, mount the disk and move any prior logs to memory
 		logging.basicConfig(format='%(asctime)s [%(levelname)s] - %(message)s',
-			datefmt='%Y-%m-%d %H:%M:%S', filename='/var/log/logrunner.log', level=logging.INFO)
+			datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 		logging.info('Initializing LogRunner')
 
 		cfg = ConfigParser.ConfigParser()
-		if os.path.exists('/etc/logrunner.conf'):
-			cfg.read('/etc/logrunner.conf')
+		if os.path.exists(config_file):
+			cfg.read(config_file)
 		else:
-			cfgfile = open('/etc/logrunner.conf', 'w')
-			cfg.add_section('config')
-			cfg.set('config', 'path', '/var/log')
-			cfg.set('config', 'gzpath', '/var/logstore')
-			cfg.set('config', 'size', 1024)
-			cfg.write()
-			cfgfile.close()
-			cfg.read('/etc/logrunner.conf')
+			logging.critical('Couldn\'t find the config file. Sorry')
+			sys.exit(1)
 
 		if path:
 			self.path = path
@@ -71,7 +66,7 @@ class LogRunner:
 		except Exception, e:
 			logging.error(e)
 			logging.critical('Creation of temporary ramdisk/mount failed, exiting')
-			sys.exit()
+			sys.exit(1)
 		for item in os.listdir(self.path):
 			shutil.move(os.path.join(self.path, item), tempdir)
 
@@ -84,13 +79,17 @@ class LogRunner:
 		except Exception, e:
 			logging.error(e)
 			logging.critical('Creation of ramdisk/mount failed, exiting')
-			sys.exit()
+			sys.exit(1)
 
 		for item in os.listdir(tempdir):
 			shutil.move(os.path.join(tempdir, item), self.path)
 		tempmp.unmount()
 		tempfs.close()
 		os.unlink(tempdir)
+
+		# Normal exit when terminated
+		atexit.register(self.stop, fs, mp)
+		signal.signal(signal.SIGTERM, lambda signum, stack_frame: sys.exit(1))
 
 		logging.info('LogRunner is up and hunting for replicants')
 
@@ -135,7 +134,7 @@ class LogRunner:
 		except Exception, e:
 			logging.error(e)
 			logging.critical('Creation of temporary ramdisk/mount on exit failed, aborting')
-			sys.exit()
+			sys.exit(1)
 		for item in os.listdir(self.path):
 			shutil.move(os.path.join(self.path, item), tempdir)
 		mp.unmount()
@@ -143,30 +142,4 @@ class LogRunner:
 		for item in os.listdir(tempdir):
 			shutil.move(os.path.join(tempdir, item), self.path)
 		logging.info('LogRunner stopped successfully')
-		sys.exit()
-
-
-def main():
-	# Check commandline params and execute as necessary
-	parser = ArgumentParser()
-	parser.add_argument("-p", "--path", help="set path to log directory")
-	parser.add_argument("-s", "--size", type=int, help="set max size (in KB) for log file before forced cycle")
-	parser.add_argument("-z", "--gzpath", help="set path to log backups directory")
-	args = parser.parse_args()
-
-	if args.path:
-		path = args.path
-	else:
-		path = ''
-	if args.gzpath:
-		gzpath = args.gzpath
-	else:
-		gzpath = ''
-	if args.size:
-		size = args.size
-	else:
-		size = 0
-
-	LogRunner(path, gzpath, size)
-
-main()
+		sys.exit(0)
