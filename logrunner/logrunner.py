@@ -27,6 +27,7 @@ import os
 import shutil
 import signal
 import sys
+import time
 import logging
 from tempfile import mkdtemp
 from fs.memoryfs import MemoryFS
@@ -34,6 +35,7 @@ from fs.expose import fuse
 
 class LogRunner:
 	def __init__(self, config_file):
+		self.stoploop = False
 		# Create the ramdisk, mount the disk and move any prior logs to memory
 		logging.basicConfig(format='%(asctime)s [%(levelname)s] - %(message)s',
 			datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
@@ -68,7 +70,7 @@ class LogRunner:
 			logging.critical('Creation of temporary ramdisk/mount failed, exiting')
 			sys.exit(1)
 		for item in os.listdir(self.path):
-			if os.path.isdir(item):
+			if os.path.isdir(os.path.join(self.path, item)):
 				shutil.copytree(os.path.join(self.path, item), os.path.join(tempdir, item))
 			else:
 				shutil.copy2(os.path.join(self.path, item), tempdir)
@@ -92,11 +94,16 @@ class LogRunner:
 
 		# Normal exit when terminated
 		atexit.register(self.stop, fs, mp)
-		signal.signal(signal.SIGTERM, lambda signum, stack_frame: sys.exit(1))
+		signal.signal(signal.SIGTERM, lambda signum, stack_frame: sys.exit(0))
+		signal.signal(signal.SIGINT, lambda signum, stack_frame: sys.exit(0))
 
 		logging.info('LogRunner is up and hunting for replicants')
 
-		# TODO: what comes after this
+		while self.stoploop == False:
+			for item in os.walk(self.path):
+				for logfile in item[2]:
+					self.check(os.path.join(item[0], logfile))
+			time.sleep(60)
 
 	def retire(self, logfile):
 		# Write the log to backup location, and flush memory
@@ -118,18 +125,15 @@ class LogRunner:
 		login.close()
 		open(absin, 'w').close()
 
-	def check(self, file):
-		# TODO
+	def check(self, logfile):
 		# Check memory use. If too high, force log write and flush.
-		pass
-
-	def watch(self):
-		# TODO
-		# Periodically check memory use compared to spec
-		pass
+		if os.path.getsize(logfile) >= (self.size*1024):
+			lf = logfile.split(self.path, 1)[1].lstrip('/')
+			self.retire(lf)
 
 	def stop(self, fs, mp):
 		# Unmount everything and stop operation
+		self.stoploop = True
 		tempdir = mkdtemp()
 		try:
 			tempfs = MemoryFS()
@@ -144,5 +148,8 @@ class LogRunner:
 		fs.close()
 		for item in os.listdir(tempdir):
 			shutil.move(os.path.join(tempdir, item), self.path)
+		tempmp.unmount()
+		tempfs.close()
+		os.unlink(tempdir)
 		logging.info('LogRunner stopped successfully')
 		sys.exit(0)
