@@ -68,14 +68,17 @@ class LogRunner:
 			logging.critical('Creation of temporary ramdisk/mount failed, exiting')
 			sys.exit(1)
 		for item in os.listdir(self.path):
-			shutil.move(os.path.join(self.path, item), tempdir)
+			if os.path.isdir(item):
+				shutil.copytree(os.path.join(self.path, item), os.path.join(tempdir, item))
+			else:
+				shutil.copy2(os.path.join(self.path, item), tempdir)
 
 		if not os.path.isdir(self.path):
 			os.mkdir(self.path, 0754)
 
 		try:
 			fs = MemoryFS()
-			mp = fuse.mount(fs, self.path)
+			mp = fuse.mount(fs, self.path, nonempty=True)
 		except Exception, e:
 			logging.error(e)
 			logging.critical('Creation of ramdisk/mount failed, exiting')
