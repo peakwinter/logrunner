@@ -110,7 +110,7 @@ class LogRunner:
 		absin = os.path.join(self.path, logfile)
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
-		if not os.path.exists(os.path.dirname(absout))
+		if not os.path.exists(os.path.dirname(absout)):
 			os.makedirs(os.path.dirname(absout))
 		try:
 			logout = gzip.open(absout, 'wb')
