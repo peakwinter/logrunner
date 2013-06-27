@@ -10,6 +10,7 @@
 import sys
 import getopt
 import os
+import ConfigParser
 
 from logrunner.daemon import Daemon
 
@@ -73,7 +74,7 @@ if __name__ == '__main__':
             cfg.set('config', 'path', '/var/log')
             cfg.set('config', 'gzpath', '/var/logstore')
             cfg.set('config', 'size', 1024)
-            cfg.write()
+            cfg.write(cfgfile)
             cfgfile.close()
     
     if action == 'run':

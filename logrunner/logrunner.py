@@ -24,21 +24,21 @@ import atexit
 import ConfigParser
 import gzip
 import os
-import shutil
 import signal
+import subprocess
 import sys
 import time
 import logging
-from tempfile import mkdtemp
-from fs.memoryfs import MemoryFS
-from fs.expose import fuse
+import tempfile
 
 class LogRunner:
 	def __init__(self, config_file):
 		self.stoploop = False
-		# Create the ramdisk, mount the disk and move any prior logs to memory
-		logging.basicConfig(format='%(asctime)s [%(levelname)s] - %(message)s',
-			datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
+		# Create the ramdisk and move any prior logs to memory
+		logging.basicConfig(
+			format='%(asctime)s [%(levelname)s] - %(message)s',
+			datefmt='%Y-%m-%d %H:%M:%S', 
+			level=logging.INFO)
 		logging.info('Initializing LogRunner')
 
 		cfg = ConfigParser.ConfigParser()
@@ -48,52 +48,35 @@ class LogRunner:
 			logging.critical('Couldn\'t find the config file. Sorry')
 			sys.exit(1)
 
-		if path:
-			self.path = path
-		else:
-			self.path = cfg.get('config', 'path')
-		if size:
-			self.size = size
-		else:
-			self.size = cfg.get('config', 'size')
-		if gzpath:
-			self.gzpath = gzpath
-		else:
-			self.gzpath = cfg.get('config', 'gzpath')
+		self.path = cfg.get('config', 'path')
+		self.size = cfg.get('config', 'size')
+		self.gzpath = cfg.get('config', 'gzpath')
 
-		tempdir = mkdtemp()
+		self.logmount = tempfile.mkdtemp()
 		try:
-			tempfs = MemoryFS()
-			tempmp = fuse.mount(tempfs, tempdir)
-		except Exception, e:
-			logging.error(e)
-			logging.critical('Creation of temporary ramdisk/mount failed, exiting')
-			sys.exit(1)
-		for item in os.listdir(self.path):
-			if os.path.isdir(os.path.join(self.path, item)):
-				shutil.copytree(os.path.join(self.path, item), os.path.join(tempdir, item))
-			else:
-				shutil.copy2(os.path.join(self.path, item), tempdir)
-
-		if not os.path.isdir(self.path):
-			os.mkdir(self.path, 0754)
-
-		try:
-			fs = MemoryFS()
-			mp = fuse.mount(fs, self.path, nonempty=True)
+			subprocess.Popen(['mount', '-t', 'ramfs', '-o',
+				'nosuid,noexec,nodev,mode=0755,size=25M', 'logrunner', 
+				self.logmount])
 		except Exception, e:
 			logging.error(e)
 			logging.critical('Creation of ramdisk/mount failed, exiting')
 			sys.exit(1)
 
-		for item in os.listdir(tempdir):
-			shutil.move(os.path.join(tempdir, item), self.path)
-		tempmp.unmount()
-		tempfs.close()
-		os.unlink(tempdir)
+		if not os.path.isdir(self.path):
+			os.mkdir(self.path, 0754)
+		for item in os.listdir(self.path):
+			if '.gz' in item:
+				subprocess.Popen(['mv', os.path.join(self.path, item), 
+					os.path.join(self.gzpath, item)])
+			else:
+				subprocess.Popen(['cp', '-rp', 
+					os.path.join(self.path, item), 
+					os.path.join(self.logmount, item)])
+
+		subprocess.Popen(['mount', '--bind', self.path, self.logmount])
 
 		# Normal exit when terminated
-		atexit.register(self.stop, fs, mp)
+		atexit.register(self.stop)
 		signal.signal(signal.SIGTERM, lambda signum, stack_frame: sys.exit(0))
 		signal.signal(signal.SIGINT, lambda signum, stack_frame: sys.exit(0))
 
@@ -107,6 +90,7 @@ class LogRunner:
 
 	def retire(self, logfile):
 		# Write the log to backup location, and flush memory
+		# TODO: do file numbering and retention of last 5 backups
 		absin = os.path.join(self.path, logfile)
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
@@ -131,25 +115,13 @@ class LogRunner:
 			lf = logfile.split(self.path, 1)[1].lstrip('/')
 			self.retire(lf)
 
-	def stop(self, fs, mp):
+	def stop(self):
 		# Unmount everything and stop operation
 		self.stoploop = True
-		tempdir = mkdtemp()
-		try:
-			tempfs = MemoryFS()
-			tempmp = fuse.mount(tempfs, tempdir)
-		except Exception, e:
-			logging.error(e)
-			logging.critical('Creation of temporary ramdisk/mount on exit failed, aborting')
-			sys.exit(1)
-		for item in os.listdir(self.path):
-			shutil.move(os.path.join(self.path, item), tempdir)
-		mp.unmount()
-		fs.close()
-		for item in os.listdir(tempdir):
-			shutil.move(os.path.join(tempdir, item), self.path)
-		tempmp.unmount()
-		tempfs.close()
-		os.unlink(tempdir)
+		subprocess.Popen(['umount', self.path])
+		for item in os.listdir(self.logmount):
+			subprocess.Popen(['mv', os.path.join(self.logmount, item), 
+				self.path])
+		os.rmdir(self.logmount)
 		logging.info('LogRunner stopped successfully')
 		sys.exit(0)
