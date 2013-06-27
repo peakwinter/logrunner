@@ -54,7 +54,7 @@ class LogRunner:
 
 		self.logmount = tempfile.mkdtemp()
 		try:
-			subprocess.Popen(['mount', '-t', 'ramfs', '-o',
+			subprocess.call(['mount', '-t', 'ramfs', '-o',
 				'nosuid,noexec,nodev,mode=0755,size=25M', 'logrunner', 
 				self.logmount])
 		except Exception, e:
@@ -64,16 +64,18 @@ class LogRunner:
 
 		if not os.path.isdir(self.path):
 			os.mkdir(self.path, 0754)
+		if not os.path.isdir(self.gzpath):
+			os.mkdir(self.gzpath, 0754)
 		for item in os.listdir(self.path):
 			if '.gz' in item:
-				subprocess.Popen(['mv', os.path.join(self.path, item), 
+				subprocess.call(['mv', os.path.join(self.path, item), 
 					os.path.join(self.gzpath, item)])
 			else:
-				subprocess.Popen(['cp', '-rp', 
+				subprocess.call(['cp', '-rp', 
 					os.path.join(self.path, item), 
 					os.path.join(self.logmount, item)])
 
-		subprocess.Popen(['mount', '--bind', self.path, self.logmount])
+		subprocess.call(['mount', '--bind', self.path, self.logmount])
 
 		# Normal exit when terminated
 		atexit.register(self.stop)
@@ -91,6 +93,7 @@ class LogRunner:
 	def retire(self, logfile):
 		# Write the log to backup location, and flush memory
 		# TODO: do file numbering and retention of last 5 backups
+		# remember that logs can also end in .1 and not be gzipped
 		absin = os.path.join(self.path, logfile)
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
@@ -105,23 +108,23 @@ class LogRunner:
 			logging.info('%s retired to %s' % (absin, absout))
 		logout.writelines(login)
 		logout.close()
-		login.write()
 		login.close()
 		open(absin, 'w').close()
 
 	def check(self, logfile):
 		# Check memory use. If too high, force log write and flush.
-		if os.path.getsize(logfile) >= (self.size*1024):
+		if os.path.getsize(logfile) >= (int(self.size)*1024):
 			lf = logfile.split(self.path, 1)[1].lstrip('/')
 			self.retire(lf)
 
 	def stop(self):
 		# Unmount everything and stop operation
 		self.stoploop = True
-		subprocess.Popen(['umount', self.path])
+		subprocess.call(['umount', self.path])
 		for item in os.listdir(self.logmount):
-			subprocess.Popen(['mv', os.path.join(self.logmount, item), 
-				self.path])
+			subprocess.call(['cp', '-rp', os.path.join(self.logmount, 
+				item), self.path])
+		subprocess.call(['umount', 'logrunner'])
 		os.rmdir(self.logmount)
 		logging.info('LogRunner stopped successfully')
 		sys.exit(0)
