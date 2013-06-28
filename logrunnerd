@@ -74,6 +74,8 @@ if __name__ == '__main__':
             cfg.set('config', 'path', '/var/log')
             cfg.set('config', 'gzpath', '/var/logstore')
             cfg.set('config', 'size', 1024)
+            cfg.set('ignore', 'folders', 'journal,sa')
+            cfg.set('ignore', 'files', 'lastlog,faillog')
             cfg.write(cfgfile)
             cfgfile.close()
     

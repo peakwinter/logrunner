@@ -22,6 +22,7 @@
 
 import atexit
 import ConfigParser
+import fnmatch
 import gzip
 import os
 import signal
@@ -51,11 +52,13 @@ class LogRunner:
 		self.path = cfg.get('config', 'path')
 		self.size = cfg.get('config', 'size')
 		self.gzpath = cfg.get('config', 'gzpath')
+		self.igfolds = cfg.get('ignore', 'folders').split(',')
+		self.igfiles = cfg.get('ignore', 'files').split(',')
 
 		self.logmount = tempfile.mkdtemp()
 		try:
 			subprocess.call(['mount', '-t', 'ramfs', '-o',
-				'nosuid,noexec,nodev,mode=0755,size=25M', 'logrunner', 
+				'nosuid,noexec,nodev,mode=0755', 'logrunner', 
 				self.logmount])
 		except Exception, e:
 			logging.error(e)
@@ -86,17 +89,29 @@ class LogRunner:
 
 		while self.stoploop == False:
 			for item in os.walk(self.path):
-				for logfile in item[2]:
-					self.check(os.path.join(item[0], logfile))
+				if not any(x in item[0] for x in self.igfolds):
+					for logfile in item[2]:
+						if not any(x in logfile for x in self.igfiles):
+							self.check(os.path.join(item[0], logfile))
 			time.sleep(60)
 
 	def retire(self, logfile):
 		# Write the log to backup location, and flush memory
-		# TODO: do file numbering and retention of last 5 backups
-		# remember that logs can also end in .1 and not be gzipped
 		absin = os.path.join(self.path, logfile)
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
+
+		if os.path.exists(absout):
+			if os.path.exists(absout + '.1'):
+				if os.path.exists(absout + '.2'):
+					if os.path.exists(absout + '.3'):
+						if os.path.exists(absout + '.4'):
+							subprocess.call(['rm', absout + '.4'])
+						subprocess.call(['mv', absout + '.3', absout + '.4'])
+					subprocess.call(['mv', absout + '.2', absout + '.3'])
+				subprocess.call(['mv', absout + '.1', absout + '.2'])
+			subprocess.call(['mv', absout, absout + '.1'])
+
 		if not os.path.exists(os.path.dirname(absout)):
 			os.makedirs(os.path.dirname(absout))
 		try:
