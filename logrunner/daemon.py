@@ -111,8 +111,12 @@ class Daemon:
         # Try killing the daemon process
         try:
             os.kill(pid, SIGTERM)
+            cycles = 0
             while os.path.exists(self.pidfile):
+                cycles = cycles + 1
                 time.sleep(1)
+                if cycles >= 10:
+                    os.kill(pid, SIGTERM)
             else:
                 if os.path.exists(self.pidfile):
                     os.remove(self.pidfile)

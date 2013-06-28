@@ -10,5 +10,8 @@ setup(name='logrunner',
       url='http://jcook.cc/logrunner',
       packages=['logrunner'],
       scripts=['logrunnerd'],
-      data_files=[('/etc', ['logrunner.conf'])]
+      data_files=[
+      ('/etc', ['logrunner.conf']),
+      ('/usr/lib/systemd/system', ['logrunner.service']),
+      ]
      )

@@ -1,0 +1,11 @@
+[Unit]
+Description=LogRunner log management daemon
+
+[Service]
+ExecStart=/usr/bin/logrunnerd -d
+ExecStop=/usr/bin/logrunnerd -s
+Type=forking
+PIDFile=/var/run/logrunner.pid
+
+[Install]
+WantedBy=multi-user.target
