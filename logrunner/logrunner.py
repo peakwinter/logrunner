@@ -22,7 +22,6 @@
 
 import atexit
 import ConfigParser
-import fnmatch
 import gzip
 import os
 import signal
@@ -116,14 +115,14 @@ class LogRunner:
 			os.makedirs(os.path.dirname(absout))
 		try:
 			logout = gzip.open(absout, 'wb')
+			logout.writelines(login)
+			logout.close()
+			login.close()
 		except Exception, e:
 			logging.error(e)
 			logging.error('Couldn\'t backup the file %s, whoops' % absin)
 		else:
 			logging.info('%s retired to %s' % (absin, absout))
-		logout.writelines(login)
-		logout.close()
-		login.close()
 		open(absin, 'w').close()
 
 	def check(self, logfile):
@@ -135,7 +134,7 @@ class LogRunner:
 	def stop(self):
 		# Unmount everything and stop operation
 		self.stoploop = True
-		subprocess.call(['umount', self.path])
+		subprocess.call(['umount', self.logmount])
 		for item in os.listdir(self.logmount):
 			subprocess.call(['cp', '-rp', os.path.join(self.logmount, 
 				item), self.path])

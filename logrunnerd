@@ -23,7 +23,7 @@ class LRDaemon(Daemon):
 def usage():
     print """
 LOGRUNNER (c) 2013 Jacob Cook
-Usage: %s [options]
+Usage: logrunnerd [options]
 Options:
     -c, --config <file> - Use given config file instead of default
     -d, --start         - Run in background (daemon mode)
@@ -78,6 +78,7 @@ if __name__ == '__main__':
             cfg.set('ignore', 'files', 'lastlog,faillog')
             cfg.write(cfgfile)
             cfgfile.close()
+            config_file = '/etc/logrunner.conf'
     
     if action == 'run':
         from logrunner.logrunner import LogRunner
