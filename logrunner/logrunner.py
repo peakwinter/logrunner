@@ -32,13 +32,15 @@ import logging
 import tempfile
 
 class LogRunner:
-	def __init__(self, config_file):
-		self.stoploop = False
+	def __init__(self, config_file, logmethod):
 		# Create the ramdisk and move any prior logs to memory
+		self.stoploop = False
 		logging.basicConfig(
 			format='%(asctime)s [%(levelname)s] - %(message)s',
 			datefmt='%Y-%m-%d %H:%M:%S', 
-			level=logging.INFO)
+			level=logging.INFO,
+			filename=('/var/log/logrunner.log' if logmethod is 'tofile' else ''),
+			)
 		logging.info('Initializing LogRunner')
 
 		cfg = ConfigParser.ConfigParser()
