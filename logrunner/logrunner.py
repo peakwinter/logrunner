@@ -45,12 +45,18 @@ class LogRunner:
 			)
 		logging.info('Initializing LogRunner')
 
-		cfg = ConfigParser.ConfigParser()
+		cfg = ConfigParser.ConfigParser(dict(
+			size=1024,
+			ramsize=1024,
+			path='/var/log',
+			gzpath='/var/logstore',
+			folders='journal,sa',
+			files='lastlog,faillog'))
+
 		if os.path.exists(config_file):
 			cfg.read(config_file)
 		else:
-			logging.critical('Couldn\'t find the config file. Sorry')
-			sys.exit(1)
+			logging.warning("Couldn't find the config file. Using defaults.")
 
 		self.size = cfg.getint('config', 'size') * 1024
 		self.ramsize = cfg.getint('config', 'ramsize') * 1024
