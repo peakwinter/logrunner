@@ -39,7 +39,7 @@ class LogRunner:
 		self.stoploop = False
 		logging.basicConfig(
 			format='%(asctime)s [%(levelname)s] - %(message)s',
-			datefmt='%Y-%m-%d %H:%M:%S', 
+			datefmt='%Y-%m-%d %H:%M:%S',
 			level=logging.INFO,
 			filename=('/var/log/logrunner.log' if logmethod is 'tofile' else ''),
 			)
@@ -63,7 +63,7 @@ class LogRunner:
 		try:
 			subprocess.call(['mount', '-t', 'tmpfs', '-o',
 				'nosuid,noexec,nodev,mode=0755,errors=continue,size={}'.format(self.ramsize),
-				'logrunner', 
+				'logrunner',
 				self.logmount])
 		except Exception, e:
 			logging.error(e)
@@ -94,11 +94,11 @@ class LogRunner:
 		logging.info('LogRunner is up and hunting for replicants')
 
 		while self.stoploop == False:
-			for item in os.walk(self.path):
-				if not any(x in item[0] for x in self.igfolds):
-					for logfile in item[2]:
+			for path, dirs, files in os.walk(self.path):
+				if not any(x in path for x in self.igfolds):
+					for logfile in files:
 						if not any(x in logfile for x in self.igfiles):
-							self.check(os.path.join(item[0], logfile))
+							self.check(os.path.join(path, logfile))
 			time.sleep(60)
 
 	def retire(self, logfile):
@@ -139,9 +139,8 @@ class LogRunner:
 
 	def check(self, logfile):
 		# Check memory use. If too high, force log write and flush.
-		if os.path.getsize(logfile) >= (int(self.size)*1024):
-			lf = logfile.split(self.path, 1)[1].lstrip('/')
-			self.retire(lf)
+		if os.path.getsize(logfile) >= self.size:
+			self.retire(logfile.split(self.path, 1)[1].lstrip('/'))
 
 	def stop(self):
 		# Unmount everything and stop operation
