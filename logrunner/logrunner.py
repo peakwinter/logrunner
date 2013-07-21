@@ -50,16 +50,18 @@ class LogRunner:
 			logging.critical('Couldn\'t find the config file. Sorry')
 			sys.exit(1)
 
-		self.path = cfg.get('config', 'path')
-		self.size = cfg.get('config', 'size')
-		self.gzpath = cfg.get('config', 'gzpath')
+		self.size = cfg.getint('config', 'size') * 1024
+		self.ramsize = cfg.getint('config', 'ramsize') * 1024
+		self.path = os.path.abspath(cfg.get('config', 'path'))
+		self.gzpath = os.path.abspath(cfg.get('config', 'gzpath'))
 		self.igfolds = cfg.get('ignore', 'folders').split(',')
 		self.igfiles = cfg.get('ignore', 'files').split(',')
 
 		self.logmount = tempfile.mkdtemp()
 		try:
-			subprocess.call(['mount', '-t', 'ramfs', '-o',
-				'nosuid,noexec,nodev,mode=0755', 'logrunner', 
+			subprocess.call(['mount', '-t', 'tmpfs', '-o',
+				'nosuid,noexec,nodev,mode=0755,errors=continue,size={}'.format(self.ramsize),
+				'logrunner', 
 				self.logmount])
 		except Exception, e:
 			logging.error(e)
