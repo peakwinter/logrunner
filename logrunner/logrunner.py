@@ -30,6 +30,8 @@ import sys
 import time
 import logging
 import tempfile
+import shutil
+
 
 class LogRunner:
 	def __init__(self, config_file, logmethod):
@@ -70,16 +72,17 @@ class LogRunner:
 
 		if not os.path.isdir(self.path):
 			os.mkdir(self.path, 0754)
+
 		if not os.path.isdir(self.gzpath):
 			os.mkdir(self.gzpath, 0754)
+
 		for item in os.listdir(self.path):
 			if '.gz' in item:
-				subprocess.call(['mv', os.path.join(self.path, item), 
-					os.path.join(self.gzpath, item)])
+				shutil.move(os.path.join(self.path, item),
+				            os.path.join(self.gzpath, item))
 			else:
-				subprocess.call(['cp', '-rp', 
-					os.path.join(self.path, item), 
-					os.path.join(self.logmount, item)])
+				shutil.copytree(os.path.join(self.path, item),
+								os.path.join(self.logmount, item))
 
 		subprocess.call(['mount', '--bind', self.path, self.logmount])
 
@@ -104,16 +107,21 @@ class LogRunner:
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
 
-		if os.path.exists(absout):
-			if os.path.exists(absout + '.1'):
-				if os.path.exists(absout + '.2'):
-					if os.path.exists(absout + '.3'):
-						if os.path.exists(absout + '.4'):
-							subprocess.call(['rm', absout + '.4'])
-						subprocess.call(['mv', absout + '.3', absout + '.4'])
-					subprocess.call(['mv', absout + '.2', absout + '.3'])
-				subprocess.call(['mv', absout + '.1', absout + '.2'])
-			subprocess.call(['mv', absout, absout + '.1'])
+		limit = 5
+		mvfiles = []
+		for x in range(0, limit):
+			path = absout if x == 0 else '.'.join((absout, x))
+
+			if not os.path.exists(path):
+				break
+
+			mvfiles.append((x, path, '.'.join((absout, x + 1))))
+
+		for i, path, nextpath in mvfiles:
+			if i == 0:
+				shutil.rm(path)
+			else:
+				shutil.move(path, nextpath)
 
 		if not os.path.exists(os.path.dirname(absout)):
 			os.makedirs(os.path.dirname(absout))
@@ -140,8 +148,8 @@ class LogRunner:
 		self.stoploop = True
 		subprocess.call(['umount', self.logmount])
 		for item in os.listdir(self.logmount):
-			subprocess.call(['cp', '-rp', os.path.join(self.logmount, 
-				item), self.path])
+			shutil.copytree(os.path.join(self.logmount, item),
+						    os.path.join(self.path, item))
 		subprocess.call(['umount', 'logrunner'])
 		os.rmdir(self.logmount)
 		logging.info('LogRunner stopped successfully')
