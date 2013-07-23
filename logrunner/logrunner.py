@@ -45,30 +45,33 @@ class LogRunner:
 			)
 		logging.info('Initializing LogRunner')
 
-		cfg = ConfigParser.ConfigParser(dict(
-			size=1024,
-			ramsize=1024,
-			path='/var/log',
-			gzpath='/var/logstore',
-			folders='journal,sa',
-			files='lastlog,faillog'))
+		cfg = ConfigParser.SafeConfigParser()
 
 		if os.path.exists(config_file):
 			cfg.read(config_file)
 		else:
+			cfg.add_section('config')
+			cfg.add_section('ignore')
+
+			cfg.set('config', 'size', '1024')
+			cfg.set('config', 'ramsize', '16')
+			cfg.set('config', 'path', '/var/log')
+			cfg.set('config', 'gzpath', '/var/logstore')
+			cfg.set('ignore', 'folders', 'journal,sa')
+			cfg.set('ignore', 'files', 'lastlog,faillog')
 			logging.warning("Couldn't find the config file. Using defaults.")
 
 		self.size = cfg.getint('config', 'size') * 1024
-		self.ramsize = cfg.getint('config', 'ramsize') * 1024
-		self.path = os.path.abspath(cfg.get('config', 'path'))
-		self.gzpath = os.path.abspath(cfg.get('config', 'gzpath'))
+		self.ramsize = cfg.getint('config', 'ramsize') * 1048576
+		self.path = cfg.get('config', 'path')
+		self.gzpath = cfg.get('config', 'gzpath')
 		self.igfolds = cfg.get('ignore', 'folders').split(',')
 		self.igfiles = cfg.get('ignore', 'files').split(',')
 
 		self.logmount = tempfile.mkdtemp()
 		try:
 			subprocess.call(['mount', '-t', 'tmpfs', '-o',
-				'nosuid,noexec,nodev,mode=0755,errors=continue,size={}'.format(self.ramsize),
+				'nosuid,noexec,nodev,mode=0755,size={}'.format(self.ramsize),
 				'logrunner',
 				self.logmount])
 		except Exception, e:
@@ -83,12 +86,14 @@ class LogRunner:
 			os.mkdir(self.gzpath, 0754)
 
 		for item in os.listdir(self.path):
-			if '.gz' in item:
-				shutil.move(os.path.join(self.path, item),
-				            os.path.join(self.gzpath, item))
+			path = os.path.join(self.path, item)
+			if os.path.isdir(path):
+				shutil.copytree(path, os.path.join(self.logmount, item))
 			else:
-				shutil.copytree(os.path.join(self.path, item),
-								os.path.join(self.logmount, item))
+				if '.gz' in item:
+					shutil.move(path, os.path.join(self.gzpath, item))
+				else:
+					shutil.copy2(path, self.logmount)
 
 		subprocess.call(['mount', '--bind', self.path, self.logmount])
 
@@ -153,9 +158,15 @@ class LogRunner:
 		self.stoploop = True
 		subprocess.call(['umount', self.logmount])
 		for item in os.listdir(self.logmount):
-			shutil.copytree(os.path.join(self.logmount, item),
-						    os.path.join(self.path, item))
+			path = os.path.join(self.logmount, item)
+			if os.path.isdir(path):
+				if os.path.exists(os.path.join(self.path, item)):
+					shutil.rmtree(os.path.join(self.path, item))
+				shutil.copytree(path, os.path.join(self.path, item))
+			else:
+				shutil.copy2(path, self.path)
+
 		subprocess.call(['umount', 'logrunner'])
-		os.rmdir(self.logmount)
+		shutil.rmtree(self.logmount)
 		logging.info('LogRunner stopped successfully')
 		sys.exit(0)
