@@ -15,6 +15,7 @@ Edit `/etc/logrunner.conf`.
 * If in rare cases your system logs are stored elsewhere, change `path`. The default is `/var/log`.
 * If you want your log backups to go somewhere else, change `gzpath`. The default is `/var/logstore`.
 * Set the maximum size in KB for a file to reach before it is 'retired', a.k.a. backed up and cleared. The default is 1MB.
+* Set the maximum size in MB of RAM for logrunner to consume (default is 16MB)
 * Folders that shouldn't be rotated go in the `folders` line under `[Ignore]`. Files that shouldn't be rotated go in the `files` line of the same section. Multiple items should be comma-separated. Note that journald binary logs are managed by journald and are added to ignore by default.
 
 ## How to use

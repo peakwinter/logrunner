@@ -63,23 +63,6 @@ if __name__ == '__main__':
         elif o in ('-s', '--stop'):
             action = 'stop'
 
-    # Find default config file
-    if not config_file:
-        if os.path.isfile('/etc/logrunner.conf'):
-            config_file = '/etc/logrunner.conf'
-        else:
-            cfg = ConfigParser.ConfigParser()
-            cfgfile = open('/etc/logrunner.conf', 'w')
-            cfg.add_section('config')
-            cfg.set('config', 'path', '/var/log')
-            cfg.set('config', 'gzpath', '/var/logstore')
-            cfg.set('config', 'size', 1024)
-            cfg.set('ignore', 'folders', 'journal,sa')
-            cfg.set('ignore', 'files', 'lastlog,faillog')
-            cfg.write(cfgfile)
-            cfgfile.close()
-            config_file = '/etc/logrunner.conf'
-    
     if action == 'run':
         from logrunner.logrunner import LogRunner
         LogRunner(config_file, 'stdout')

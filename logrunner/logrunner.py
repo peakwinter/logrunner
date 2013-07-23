@@ -30,6 +30,8 @@ import sys
 import time
 import logging
 import tempfile
+import shutil
+
 
 class LogRunner:
 	def __init__(self, config_file, logmethod):
@@ -37,29 +39,40 @@ class LogRunner:
 		self.stoploop = False
 		logging.basicConfig(
 			format='%(asctime)s [%(levelname)s] - %(message)s',
-			datefmt='%Y-%m-%d %H:%M:%S', 
+			datefmt='%Y-%m-%d %H:%M:%S',
 			level=logging.INFO,
 			filename=('/var/log/logrunner.log' if logmethod is 'tofile' else ''),
 			)
 		logging.info('Initializing LogRunner')
 
-		cfg = ConfigParser.ConfigParser()
+		cfg = ConfigParser.SafeConfigParser()
+
 		if os.path.exists(config_file):
 			cfg.read(config_file)
 		else:
-			logging.critical('Couldn\'t find the config file. Sorry')
-			sys.exit(1)
+			cfg.add_section('config')
+			cfg.add_section('ignore')
 
+			cfg.set('config', 'size', '1024')
+			cfg.set('config', 'ramsize', '16')
+			cfg.set('config', 'path', '/var/log')
+			cfg.set('config', 'gzpath', '/var/logstore')
+			cfg.set('ignore', 'folders', 'journal,sa')
+			cfg.set('ignore', 'files', 'lastlog,faillog')
+			logging.warning("Couldn't find the config file. Using defaults.")
+
+		self.size = cfg.getint('config', 'size') * 1024
+		self.ramsize = cfg.getint('config', 'ramsize') * 1048576
 		self.path = cfg.get('config', 'path')
-		self.size = cfg.get('config', 'size')
 		self.gzpath = cfg.get('config', 'gzpath')
 		self.igfolds = cfg.get('ignore', 'folders').split(',')
 		self.igfiles = cfg.get('ignore', 'files').split(',')
 
 		self.logmount = tempfile.mkdtemp()
 		try:
-			subprocess.call(['mount', '-t', 'ramfs', '-o',
-				'nosuid,noexec,nodev,mode=0755', 'logrunner', 
+			subprocess.call(['mount', '-t', 'tmpfs', '-o',
+				'nosuid,noexec,nodev,mode=0755,size={}'.format(self.ramsize),
+				'logrunner',
 				self.logmount])
 		except Exception, e:
 			logging.error(e)
@@ -68,16 +81,19 @@ class LogRunner:
 
 		if not os.path.isdir(self.path):
 			os.mkdir(self.path, 0754)
+
 		if not os.path.isdir(self.gzpath):
 			os.mkdir(self.gzpath, 0754)
+
 		for item in os.listdir(self.path):
-			if '.gz' in item:
-				subprocess.call(['mv', os.path.join(self.path, item), 
-					os.path.join(self.gzpath, item)])
+			path = os.path.join(self.path, item)
+			if os.path.isdir(path):
+				shutil.copytree(path, os.path.join(self.logmount, item))
 			else:
-				subprocess.call(['cp', '-rp', 
-					os.path.join(self.path, item), 
-					os.path.join(self.logmount, item)])
+				if '.gz' in item:
+					shutil.move(path, os.path.join(self.gzpath, item))
+				else:
+					shutil.copy2(path, self.logmount)
 
 		subprocess.call(['mount', '--bind', self.path, self.logmount])
 
@@ -89,11 +105,11 @@ class LogRunner:
 		logging.info('LogRunner is up and hunting for replicants')
 
 		while self.stoploop == False:
-			for item in os.walk(self.path):
-				if not any(x in item[0] for x in self.igfolds):
-					for logfile in item[2]:
+			for path, dirs, files in os.walk(self.path):
+				if not any(x in path for x in self.igfolds):
+					for logfile in files:
 						if not any(x in logfile for x in self.igfiles):
-							self.check(os.path.join(item[0], logfile))
+							self.check(os.path.join(path, logfile))
 			time.sleep(60)
 
 	def retire(self, logfile):
@@ -102,16 +118,21 @@ class LogRunner:
 		absout = os.path.join(self.gzpath, logfile + '.gz')
 		login = open(absin, 'rb')
 
-		if os.path.exists(absout):
-			if os.path.exists(absout + '.1'):
-				if os.path.exists(absout + '.2'):
-					if os.path.exists(absout + '.3'):
-						if os.path.exists(absout + '.4'):
-							subprocess.call(['rm', absout + '.4'])
-						subprocess.call(['mv', absout + '.3', absout + '.4'])
-					subprocess.call(['mv', absout + '.2', absout + '.3'])
-				subprocess.call(['mv', absout + '.1', absout + '.2'])
-			subprocess.call(['mv', absout, absout + '.1'])
+		limit = 5
+		mvfiles = []
+		for x in range(0, limit):
+			path = absout if x == 0 else '.'.join((absout, x))
+
+			if not os.path.exists(path):
+				break
+
+			mvfiles.append((x, path, '.'.join((absout, x + 1))))
+
+		for i, path, nextpath in mvfiles:
+			if i == 0:
+				shutil.rm(path)
+			else:
+				shutil.move(path, nextpath)
 
 		if not os.path.exists(os.path.dirname(absout)):
 			os.makedirs(os.path.dirname(absout))
@@ -129,18 +150,23 @@ class LogRunner:
 
 	def check(self, logfile):
 		# Check memory use. If too high, force log write and flush.
-		if os.path.getsize(logfile) >= (int(self.size)*1024):
-			lf = logfile.split(self.path, 1)[1].lstrip('/')
-			self.retire(lf)
+		if os.path.getsize(logfile) >= self.size:
+			self.retire(logfile.split(self.path, 1)[1].lstrip('/'))
 
 	def stop(self):
 		# Unmount everything and stop operation
 		self.stoploop = True
 		subprocess.call(['umount', self.logmount])
 		for item in os.listdir(self.logmount):
-			subprocess.call(['cp', '-rp', os.path.join(self.logmount, 
-				item), self.path])
+			path = os.path.join(self.logmount, item)
+			if os.path.isdir(path):
+				if os.path.exists(os.path.join(self.path, item)):
+					shutil.rmtree(os.path.join(self.path, item))
+				shutil.copytree(path, os.path.join(self.path, item))
+			else:
+				shutil.copy2(path, self.path)
+
 		subprocess.call(['umount', 'logrunner'])
-		os.rmdir(self.logmount)
+		shutil.rmtree(self.logmount)
 		logging.info('LogRunner stopped successfully')
 		sys.exit(0)
